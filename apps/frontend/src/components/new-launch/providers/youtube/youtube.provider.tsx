@@ -37,6 +37,56 @@ const madeForKids = [
     value: 'yes',
   },
 ];
+const syntheticMedia = [
+  {
+    label: 'No',
+    value: 'no',
+  },
+  {
+    label: 'Yes',
+    value: 'yes',
+  },
+];
+
+// Language codes as YouTube expects them (snippet.defaultLanguage /
+// snippet.defaultAudioLanguage); "Not set" leaves the field untouched.
+const languages = [
+  { label: 'Not set', value: '' },
+  { label: 'Arabic', value: 'ar' },
+  { label: 'Chinese (Simplified)', value: 'zh-Hans' },
+  { label: 'Chinese (Traditional)', value: 'zh-Hant' },
+  { label: 'Czech', value: 'cs' },
+  { label: 'Danish', value: 'da' },
+  { label: 'Dutch', value: 'nl' },
+  { label: 'English', value: 'en' },
+  { label: 'English (United Kingdom)', value: 'en-GB' },
+  { label: 'English (United States)', value: 'en-US' },
+  { label: 'Finnish', value: 'fi' },
+  { label: 'French', value: 'fr' },
+  { label: 'German', value: 'de' },
+  { label: 'Greek', value: 'el' },
+  { label: 'Hebrew', value: 'iw' },
+  { label: 'Hindi', value: 'hi' },
+  { label: 'Hungarian', value: 'hu' },
+  { label: 'Indonesian', value: 'id' },
+  { label: 'Italian', value: 'it' },
+  { label: 'Japanese', value: 'ja' },
+  { label: 'Korean', value: 'ko' },
+  { label: 'Norwegian', value: 'no' },
+  { label: 'Polish', value: 'pl' },
+  { label: 'Portuguese', value: 'pt' },
+  { label: 'Portuguese (Brazil)', value: 'pt-BR' },
+  { label: 'Romanian', value: 'ro' },
+  { label: 'Russian', value: 'ru' },
+  { label: 'Spanish', value: 'es' },
+  { label: 'Spanish (Latin America)', value: 'es-419' },
+  { label: 'Swedish', value: 'sv' },
+  { label: 'Thai', value: 'th' },
+  { label: 'Turkish', value: 'tr' },
+  { label: 'Ukrainian', value: 'uk' },
+  { label: 'Vietnamese', value: 'vi' },
+];
+
 const YoutubeSettings: FC = () => {
   const { register, control } = useSettings();
   return (
@@ -61,6 +111,42 @@ const YoutubeSettings: FC = () => {
         })}
       >
         {madeForKids.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Altered or synthetic content"
+        {...register('containsSyntheticMedia', {
+          value: 'no',
+        })}
+      >
+        {syntheticMedia.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Video language"
+        {...register('defaultAudioLanguage', {
+          value: '',
+        })}
+      >
+        {languages.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Title and description language"
+        {...register('defaultLanguage', {
+          value: '',
+        })}
+      >
+        {languages.map((t) => (
           <option key={t.value} value={t.value}>
             {t.label}
           </option>

@@ -582,10 +582,28 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
             ...(settings?.tags?.length
               ? { tags: settings.tags.map((p) => p.label) }
               : {}),
+            ...(settings?.defaultLanguage
+              ? { defaultLanguage: settings.defaultLanguage }
+              : {}),
+            ...(settings?.defaultAudioLanguage
+              ? { defaultAudioLanguage: settings.defaultAudioLanguage }
+              : {}),
           },
           status: {
             privacyStatus: settings.type,
             selfDeclaredMadeForKids: settings.selfDeclaredMadeForKids === 'yes',
+            // "altered or synthetic content" disclosure, only when the user
+            // answered it - leaving it out keeps YouTube's default.
+            ...(settings?.containsSyntheticMedia
+              ? {
+                  containsSyntheticMedia:
+                    settings.containsSyntheticMedia === 'yes',
+                }
+              : {}),
+            // YouTube rejects publishAt on anything but a private upload.
+            ...(settings?.publishAt && settings.type === 'private'
+              ? { publishAt: settings.publishAt }
+              : {}),
           },
         }),
       }
