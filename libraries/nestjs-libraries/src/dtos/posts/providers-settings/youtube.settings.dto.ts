@@ -2,11 +2,14 @@ import {
   IsArray,
   IsDefined,
   IsIn,
+  IsISO8601,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
   registerDecorator,
+  ValidateIf,
   ValidateNested,
   ValidationArguments,
   ValidationOptions,
@@ -55,6 +58,10 @@ export function IsYoutubeTagsLength(validationOptions?: ValidationOptions) {
   };
 }
 
+// BCP-47 language tags as YouTube expects them for snippet.defaultLanguage
+// and snippet.defaultAudioLanguage, e.g. "en", "pt-BR", "zh-Hans".
+export const YOUTUBE_LANGUAGE_PATTERN = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/i;
+
 export class YoutubeTagsSettings {
   @IsString()
   value: string;
@@ -77,6 +84,35 @@ export class YoutubeSettingsDto {
   @IsIn(['yes', 'no'])
   @IsOptional()
   selfDeclaredMadeForKids: 'no' | 'yes';
+
+  // YouTube's "altered or synthetic content" disclosure
+  // (status.containsSyntheticMedia). Only sent when set.
+  @IsIn(['yes', 'no'])
+  @IsOptional()
+  containsSyntheticMedia?: 'no' | 'yes';
+
+  // Language of the title and description (snippet.defaultLanguage).
+  @ValidateIf((o) => !!o.defaultLanguage)
+  @IsString()
+  @Matches(YOUTUBE_LANGUAGE_PATTERN, {
+    message: 'defaultLanguage must be a language code such as en or pt-BR',
+  })
+  defaultLanguage?: string;
+
+  // Language spoken in the video (snippet.defaultAudioLanguage).
+  @ValidateIf((o) => !!o.defaultAudioLanguage)
+  @IsString()
+  @Matches(YOUTUBE_LANGUAGE_PATTERN, {
+    message: 'defaultAudioLanguage must be a language code such as en or pt-BR',
+  })
+  defaultAudioLanguage?: string;
+
+  // Release time on YouTube's side (status.publishAt, ISO 8601). YouTube
+  // accepts it for private uploads only and makes the video public at that
+  // time - the upload and its processing can happen well before the release.
+  @ValidateIf((o) => !!o.publishAt)
+  @IsISO8601()
+  publishAt?: string;
 
   @IsOptional()
   @ValidateNested()
