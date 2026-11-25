@@ -91,12 +91,67 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
     return true;
   }
 
+  private thumbnailErrorDetails(body: string) {
+    // runInConcurrent passes safeStringify(GaxiosError); fetch passes an API
+    // response body directly. Never copy config, headers or other SDK fields.
+    const parse = (value: any) => {
+      if (typeof value !== 'string') return value;
+      try {
+        return JSON.parse(value);
+      } catch {
+        return undefined;
+      }
+    };
+    const error = parse(body);
+    const data = parse(error?.response?.data) ?? error;
+    const details = data?.error ?? data;
+    const first = details?.errors?.[0] ?? error?.errors?.[0];
+    const scalar = (value: any): string =>
+      typeof value === 'string' || typeof value === 'number'
+        ? String(value)
+        : '';
+    const reason = scalar(first?.reason);
+    const domain = scalar(first?.domain);
+    const status = scalar(
+      error?.response?.status ?? error?.status ?? details?.code
+    );
+    const message = scalar(first?.message ?? details?.message ?? error?.message);
+    const raw = [
+      [status, reason].filter(Boolean).join(' '),
+      domain,
+    ]
+      .filter(Boolean)
+      .join(' / ');
+    const description = [raw, message].filter(Boolean).join(': ');
+    return {
+      reason,
+      status,
+      suffix: description ? ` (YouTube: ${description})` : '',
+    };
+  }
+
   override handleErrors(body: string):
     | {
         type: 'refresh-token' | 'bad-body';
         value: string;
       }
     | undefined {
+    const thumbnail = this.thumbnailErrorDetails(body);
+    // Authentication must reach the refresh path even if the domain mentions
+    // thumbnails; it must not become a permanent post-upload error.
+    if (
+      body.includes('youtube.thumbnail') &&
+      (thumbnail.status === '401' ||
+        body.includes('Unauthorized') ||
+        body.includes('UNAUTHENTICATED') ||
+        body.includes('invalid_grant'))
+    ) {
+      return {
+        type: 'refresh-token',
+        value: 'Please re-authenticate your YouTube account',
+      };
+    }
+
     if (body.includes('invalidTags')) {
       return {
         type: 'bad-body',
@@ -183,7 +238,8 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
       return {
         type: 'bad-body',
         value:
-          'We have uploaded your video but the thumbnail format is not supported, please use JPEG or PNG.',
+          'We have uploaded your video but the thumbnail format is not supported, please use JPEG or PNG.' +
+          thumbnail.suffix,
       };
     }
 
@@ -191,7 +247,8 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
       return {
         type: 'bad-body',
         value:
-          'We have uploaded your video but the thumbnail image is too tall.',
+          'We have uploaded your video but the thumbnail image is too tall.' +
+          thumbnail.suffix,
       };
     }
 
@@ -199,7 +256,8 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
       return {
         type: 'bad-body',
         value:
-          'We have uploaded your video but the thumbnail image is too wide.',
+          'We have uploaded your video but the thumbnail image is too wide.' +
+          thumbnail.suffix,
       };
     }
 
@@ -223,7 +281,8 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
       return {
         type: 'bad-body',
         value:
-          'We have uploaded your video but we could not set the thumbnail. Thumbnail size is too large.',
+          'We have uploaded your video but we could not set the thumbnail. Thumbnail size is too large.' +
+          thumbnail.suffix,
       };
     }
 
@@ -247,7 +306,9 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
       return {
         type: 'bad-body',
         value:
-          'Your video was uploaded to YouTube successfully, but we could not set the thumbnail: custom thumbnails require a phone-verified YouTube channel. Verify your channel at youtube.com/verify, and set this video\'s thumbnail manually in YouTube Studio.',
+          (thumbnail.reason === 'forbidden'
+            ? 'Your video was uploaded to YouTube successfully, but we could not set the thumbnail: custom thumbnails require a phone-verified YouTube channel. Verify your channel at youtube.com/verify, and set this video\'s thumbnail manually in YouTube Studio.'
+            : 'Video uploaded, thumbnail could not be set.') + thumbnail.suffix,
       };
     }
 
@@ -855,35 +916,43 @@ export class YoutubeProvider extends SocialAbstract implements SocialProvider {
       client.setCredentials({ access_token: accessToken });
       const youtubeClient = youtube(client);
 
-      try {
-        await this.runInConcurrent(async () =>
-          youtubeClient.thumbnails.set({
-            videoId,
-            media: {
-              body: (
-                await this.getSsrfSafeAxios()({
-                  url: pendingData.thumbnail,
-                  method: 'GET',
-                  responseType: 'stream',
-                })
-              ).data,
-            },
-          })
-        );
-      } catch (err) {
-        // the video is already live: a rejected thumbnail must not lose its id
-        // and URL (a token problem is left to the refresh + retry path, the
-        // thumbnail call is idempotent)
-        if (err instanceof BadBody && pendingData.postDbId) {
-          throw new PublishedWithError(
-            this.identifier,
-            pendingData.postDbId,
-            videoId,
-            releaseURL,
-            err.message
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await this.runInConcurrent(async () =>
+            youtubeClient.thumbnails.set({
+              videoId,
+              media: {
+                // Each attempt needs a new stream: the SDK consumes it.
+                body: (
+                  await this.getSsrfSafeAxios()({
+                    url: pendingData.thumbnail,
+                    method: 'GET',
+                    responseType: 'stream',
+                  })
+                ).data,
+              },
+            })
           );
+          break;
+        } catch (err) {
+          if (err instanceof RefreshToken) throw err;
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 30_000));
+            continue;
+          }
+          // The video is already live: preserve its ID and URL after the
+          // second failure instead of uploading it again.
+          if (err instanceof BadBody && pendingData.postDbId) {
+            throw new PublishedWithError(
+              this.identifier,
+              pendingData.postDbId,
+              videoId,
+              releaseURL,
+              err.message
+            );
+          }
+          throw err;
         }
-        throw err;
       }
     }
 
